@@ -19,8 +19,8 @@ int
 main(int argc, char* argv[])
 {
     // Configura o número de clientes
-    uint32_t nClients = 8; // Número de clientes (c0, c1, c2, c3, c4, ... etc.)
-    double simulationTime = 11.0; // Tempo de simulação em segundos
+    uint32_t nClients = 32; // Número de clientes (c0, c1, c2, c3, c4, ... etc.)
+    double simulationTime = 20.0; // Tempo de simulação em segundos
     CommandLine cmd;
     cmd.AddValue("nClients", "Número de clientes na rede sem fio", nClients);
     cmd.Parse(argc, argv);
@@ -72,11 +72,20 @@ main(int argc, char* argv[])
     mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     mobility.Install(apNode);
 
-    // Configura a mobilidade para os clientes (mobilidade aleatória)
-    mobility.SetMobilityModel("ns3::RandomWalk2dMobilityModel",
-                              "Bounds",
-                              RectangleValue(Rectangle(-50, 50, -50, 50)));
+    // Define o modelo de mobilidade como ConstantVelocityMobilityModel
+    mobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
     mobility.Install(wifiClients);
+
+    // Configura a velocidade para cada nó cliente
+    for (uint32_t i = 0; i < wifiClients.GetN(); ++i) {
+        Ptr<ConstantVelocityMobilityModel> mobilityModel = wifiClients.Get(i)->GetObject<ConstantVelocityMobilityModel>();
+
+        // Define a posição inicial (opcional, pode ser aleatória)
+        mobilityModel->SetPosition(Vector(0.0, 0.0, 0.0)); // (x, y, z)
+
+        // Define a velocidade e a direção do nó
+        mobilityModel->SetVelocity(Vector(5.0, 0.0, 0.0)); // Velocidade (m/s) em (x, y, z)
+    }
 
     // Servidor fixo
     mobility.Install(serverNode);
@@ -97,25 +106,31 @@ main(int argc, char* argv[])
     // Rede sem fio (192.168.0.0/24)
     address.SetBase("192.168.0.0", "255.255.255.0");
     Ipv4InterfaceContainer wifiInterfaces = address.Assign(clientDevices);
+    address.Assign(apDevice);
 
     // Configura o servidor TCP (usando PacketSink)
     uint16_t port = 9; // Porta TCP padrão
-    PacketSinkHelper tcpServer("ns3::TcpSocketFactory",
-                               InetSocketAddress(Ipv4Address::GetAny(), port));
-    ApplicationContainer serverApp = tcpServer.Install(serverNode.Get(0));
-    serverApp.Start(Seconds(1.0));
-    serverApp.Stop(Seconds(simulationTime));
+    for (u_int32_t i = 0; i < nClients; i++)
+    {
+        u_int16_t m_port = port + i;
+
+    // Cria o servidor TCP
+        PacketSinkHelper tcpServer("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), m_port));
+        ApplicationContainer serverApp = tcpServer.Install(serverNode.Get(0));
+        serverApp.Start(Seconds(1.0));
+        serverApp.Stop(Seconds(simulationTime));
 
     // Aplicação nos clientes
-    BulkSendHelper tcpClient("ns3::TcpSocketFactory",
-                             InetSocketAddress(p2pInterfaces.GetAddress(0), port));
-    tcpClient.SetAttribute("MaxBytes", UintegerValue(0));    // Enviar até não houver mais dados
-    tcpClient.SetAttribute("SendSize", UintegerValue(1024)); // Tamanho do pacote
-
-    ApplicationContainer clientApps = tcpClient.Install(wifiClients);
-    clientApps.Start(Seconds(2.0));
-    clientApps.Stop(Seconds(simulationTime));
-
+        OnOffHelper onoffHelper("ns3::TcpSocketFactory", InetSocketAddress(p2pInterfaces.GetAddress(0), m_port));
+        onoffHelper.SetAttribute("DataRate", StringValue("1Mbps"));  // Taxa de dados de 1 Mbps
+        onoffHelper.SetAttribute("PacketSize", UintegerValue(1024));  // Tamanho do pacote de 1024 bytes
+        onoffHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1.0]"));  // Tempo de atividade 1 segundo
+        onoffHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0.0]")); // Tempo de inatividade 0 segundos
+    
+        ApplicationContainer clientApps = onoffHelper.Install(wifiClients.Get(i));
+        clientApps.Start(Seconds(2.0));
+        clientApps.Stop(Seconds(simulationTime));
+    }
     // Habilitar o roteamento
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
@@ -136,6 +151,7 @@ main(int argc, char* argv[])
     Ptr<Ipv4FlowClassifier> classifier =
         DynamicCast<Ipv4FlowClassifier>(flowmonHelper.GetClassifier());
     std::map<FlowId, FlowMonitor::FlowStats> stats = flowMonitor->GetFlowStats();
+    flowMonitor->SerializeToXmlFile("TCP-Mobility.xml", true, true);
 
     if (stats.empty())
     {
