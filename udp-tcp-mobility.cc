@@ -15,7 +15,7 @@ NS_LOG_COMPONENT_DEFINE("TcpUdpMobilityScenario");
 
 int main(int argc, char* argv[])
 {
-    uint32_t nClients = 4; // Número total de clientes (deve ser par para dividir 50/50)
+    uint32_t nClients = 32; // Número total de clientes (deve ser par para dividir 50/50)
     double simulationTime = 11.0;
     CommandLine cmd;
     cmd.AddValue("nClients", "Número de clientes na rede sem fio", nClients);
@@ -66,17 +66,26 @@ int main(int argc, char* argv[])
     mac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid));
     NetDeviceContainer apDevice = wifi.Install(phy, mac, apNode);
 
-   // Configura a mobilidade para o AP (fixo)
+    // Configura a mobilidade para o AP (fixo)
     MobilityHelper mobility;
 
     mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     mobility.Install(apNode);
-
-    // Configura a mobilidade para os clientes (mobilidade aleatória)
-    mobility.SetMobilityModel("ns3::RandomWalk2dMobilityModel",
-                              "Bounds",
-                              RectangleValue(Rectangle(-50, 50, -50, 50)));
+    
+    // Define o modelo de mobilidade como ConstantVelocityMobilityModel
+    mobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
     mobility.Install(wifiClients);
+
+    // Configura a velocidade para cada nó cliente
+    for (uint32_t i = 0; i < wifiClients.GetN(); ++i) {
+        Ptr<ConstantVelocityMobilityModel> mobilityModel = wifiClients.Get(i)->GetObject<ConstantVelocityMobilityModel>();
+
+        // Define a posição inicial (opcional, pode ser aleatória)
+        mobilityModel->SetPosition(Vector(0.0, 0.0, 0.0)); // (x, y, z)
+
+        // Define a velocidade e a direção do nó
+        mobilityModel->SetVelocity(Vector(5.0, 0.0, 0.0)); // Velocidade (m/s) em (x, y, z)
+    }
 
     // Servidor fixo
     mobility.Install(serverNode);
@@ -101,62 +110,59 @@ int main(int argc, char* argv[])
 
     // Configurar aplicações
     uint16_t tcpPort = 9;  // Porta TCP
-    uint16_t udpPort = 10; // Porta UDP
+    uint16_t udpPort = nClients + 10; // Porta UDP
 
-    // Servidor TCP
-    PacketSinkHelper tcpServer("ns3::TcpSocketFactory",
-                               InetSocketAddress(Ipv4Address::GetAny(), tcpPort));
-    ApplicationContainer serverApps = tcpServer.Install(serverNode.Get(0));
-
-    // Servidor UDP
-    PacketSinkHelper udpServer("ns3::UdpSocketFactory",
-                               InetSocketAddress(Ipv4Address::GetAny(), udpPort));
-    serverApps.Add(udpServer.Install(serverNode.Get(0)));
-
-    NS_LOG_INFO("Aplicações do servidor TCP e UDP iniciadas.");
-    serverApps.Start(Seconds(1.0));
-    serverApps.Stop(Seconds(simulationTime));
-
-    // Clientes TCP
-    uint32_t halfClients = nClients / 2;
-
-    BulkSendHelper tcpClient("ns3::TcpSocketFactory",
-                             InetSocketAddress(p2pInterfaces.GetAddress(0), tcpPort));
-    tcpClient.SetAttribute("MaxBytes", UintegerValue(0));    // Sem limite de bytes
-    tcpClient.SetAttribute("SendSize", UintegerValue(1024)); // Tamanho do pacote
-
-    ApplicationContainer tcpClientApps;
-
-    // Instalar o aplicativo TCP nos primeiros `halfClients` nós
-    for (uint32_t i = 0; i < halfClients; ++i)
+    for (u_int32_t i = 0; i < nClients/2; i++)
     {
-        tcpClientApps.Add(tcpClient.Install(wifiClients.Get(i)));
+        u_int16_t m_port = udpPort + i;
+
+        // Aplicação no servidor
+        PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", InetSocketAddress(p2pInterfaces.GetAddress(0), m_port));
+        ApplicationContainer serverApp = sinkHelper.Install(serverNode.Get(0));
+        serverApp.Start(Seconds(1.0));
+        serverApp.Stop(Seconds(simulationTime));
+
+        // Aplicação nos clientes
+        OnOffHelper onoffHelper("ns3::UdpSocketFactory", InetSocketAddress(p2pInterfaces.GetAddress(0), m_port));
+        onoffHelper.SetAttribute("DataRate", StringValue("1Mbps"));  // Taxa de dados de 1 Mbps
+        onoffHelper.SetAttribute("PacketSize", UintegerValue(1024));  // Tamanho do pacote de 1024 bytes
+        onoffHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1.0]"));  // Tempo de atividade 1 segundo
+        onoffHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0.0]")); // Tempo de inatividade 0 segundos
+
+
+        ApplicationContainer clientApps = onoffHelper.Install(wifiClients.Get(i));
+        clientApps.Start(Seconds(2.0));
+        clientApps.Stop(Seconds(simulationTime));
     }
 
-    NS_LOG_INFO("Clientes TCP iniciados.");
-    tcpClientApps.Start(Seconds(1.0));
-    tcpClientApps.Stop(Seconds(simulationTime));
-
-    // Clientes UDP
-
-    UdpClientHelper udpClient(p2pInterfaces.GetAddress(0), udpPort);
-    udpClient.SetAttribute("MaxPackets", UintegerValue(1));
-    udpClient.SetAttribute("Interval", TimeValue(Seconds(1.0)));
-    udpClient.SetAttribute("PacketSize", UintegerValue(1024));
-
-    ApplicationContainer udpClientApps;
-
-    // Instalar o aplicativo UDP nos clientes restantes
-    for (uint32_t i = halfClients; i < nClients; ++i)
+    for (u_int32_t i = 0; i < nClients/2; i++)
     {
-        udpClientApps.Add(udpClient.Install(wifiClients.Get(i)));
+        u_int16_t m_port = tcpPort + i;
+
+        // Aplicação no servidor
+        PacketSinkHelper sinkHelper("ns3::TcpSocketFactory", InetSocketAddress(p2pInterfaces.GetAddress(0), m_port));
+        ApplicationContainer serverApp = sinkHelper.Install(serverNode.Get(0));
+        serverApp.Start(Seconds(1.0));
+        serverApp.Stop(Seconds(simulationTime));
+
+        // Aplicação nos clientes
+        OnOffHelper onoffHelper("ns3::TcpSocketFactory", InetSocketAddress(p2pInterfaces.GetAddress(0), m_port));
+        onoffHelper.SetAttribute("DataRate", StringValue("1Mbps"));  // Taxa de dados de 1 Mbps
+        onoffHelper.SetAttribute("PacketSize", UintegerValue(1024));  // Tamanho do pacote de 1024 bytes
+        onoffHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1.0]"));  // Tempo de atividade 1 segundo
+        onoffHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0.0]")); // Tempo de inatividade 0 segundos
+
+
+        ApplicationContainer clientApps = onoffHelper.Install(wifiClients.Get(i));
+        clientApps.Start(Seconds(2.0));
+        clientApps.Stop(Seconds(simulationTime));
     }
 
-    NS_LOG_INFO("Clientes UDP iniciados.");
-    udpClientApps.Start(Seconds(2.0));
-    udpClientApps.Stop(Seconds(simulationTime));
+    // Habilitar o roteamento
+    Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
     // Habilita o rastreamento de pacotes (opcional)
+    pointToPoint.EnablePcapAll("udp-tcp-mobility");
     phy.EnablePcap("udp-tcp-mobility", apDevice.Get(0));
 
     // Configurar o FlowMonitor
@@ -164,8 +170,7 @@ int main(int argc, char* argv[])
     Ptr<FlowMonitor> monitor = flowmonHelper.InstallAll();
 
     // Iniciar a simulação
-    Simulator::Stop(Seconds(11.0));
-    NS_LOG_INFO("Iniciando a simulação...");
+    Simulator::Stop(Seconds(simulationTime));
     Simulator::Run();
     NS_LOG_INFO("Simulação finalizada.");
 
@@ -174,6 +179,7 @@ int main(int argc, char* argv[])
     Ptr<Ipv4FlowClassifier> classifier =
         DynamicCast<Ipv4FlowClassifier>(flowmonHelper.GetClassifier());
     std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats();
+    monitor->SerializeToXmlFile("UDP-TCP-Mobility.xml", true, true);
     if (stats.empty())
     {
         NS_LOG_ERROR("Nenhum fluxo coletado.");

@@ -1,4 +1,3 @@
-// udp
 #include "ns3/applications-module.h"
 #include "ns3/core-module.h"
 #include "ns3/flow-monitor-helper.h"
@@ -19,8 +18,8 @@ NS_LOG_COMPONENT_DEFINE("UdpNoMobilityScenario");
 int
 main(int argc, char* argv[])
 {
-    uint32_t nClients = 32; // Número inicial de clientes
-    double simulationTime = 11.0;
+    uint32_t nClients = 18; // Número inicial de clientes
+    double simulationTime = 20.0;
     CommandLine cmd;
     cmd.AddValue("nClients", "Número de clientes na rede sem fio", nClients);
     cmd.Parse(argc, argv);
@@ -109,24 +108,31 @@ main(int argc, char* argv[])
     Ipv4InterfaceContainer wifiInterfaces = address.Assign(clientDevices);
     address.Assign(apDevice);
 
-    // 7. Configurar a aplicação UDP
+    // Configurar a aplicação UDP
     uint16_t port = 9;
 
-    // Aplicação no servidor
-    UdpServerHelper udpServer(port);
-    ApplicationContainer serverApp = udpServer.Install(serverNode.Get(0));
-    serverApp.Start(Seconds(1.0));
-    serverApp.Stop(Seconds(simulationTime));
+    for (u_int32_t i = 0; i < nClients; i++)
+    {
+        u_int16_t m_port = port + i;
 
-    // Aplicação nos clientes
-    UdpClientHelper udpClient(p2pInterfaces.GetAddress(0), port);
-    udpClient.SetAttribute("MaxPackets", UintegerValue(1));
-    udpClient.SetAttribute("Interval", TimeValue(Seconds(1.0)));
-    udpClient.SetAttribute("PacketSize", UintegerValue(1024));
+        // Aplicação no servidor
+        PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", InetSocketAddress(p2pInterfaces.GetAddress(0), m_port));
+        ApplicationContainer serverApp = sinkHelper.Install(serverNode.Get(0));
+        serverApp.Start(Seconds(1.0));
+        serverApp.Stop(Seconds(simulationTime));
 
-    ApplicationContainer clientApps = udpClient.Install(wifiClients);
-    clientApps.Start(Seconds(2.0));
-    clientApps.Stop(Seconds(simulationTime));
+        // Aplicação nos clientes
+        OnOffHelper onoffHelper("ns3::UdpSocketFactory", InetSocketAddress(p2pInterfaces.GetAddress(0), m_port));
+        onoffHelper.SetAttribute("DataRate", StringValue("1Mbps"));  // Taxa de dados de 1 Mbps
+        onoffHelper.SetAttribute("PacketSize", UintegerValue(1024));  // Tamanho do pacote de 1024 bytes
+        onoffHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1.0]"));  // Tempo de atividade 1 segundo
+        onoffHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0.0]")); // Tempo de inatividade 0 segundos
+
+
+        ApplicationContainer clientApps = onoffHelper.Install(wifiClients.Get(i));
+        clientApps.Start(Seconds(2.0));
+        clientApps.Stop(Seconds(simulationTime));
+    }
 
     // Habilitar o roteamento
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
@@ -145,9 +151,9 @@ main(int argc, char* argv[])
 
     // Coletar métricas do FlowMonitor
     flowMonitor->CheckForLostPackets();
-    Ptr<Ipv4FlowClassifier> classifier =
-        DynamicCast<Ipv4FlowClassifier>(flowmonHelper.GetClassifier());
+    Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier>(flowmonHelper.GetClassifier());
     std::map<FlowId, FlowMonitor::FlowStats> stats = flowMonitor->GetFlowStats();
+    flowMonitor->SerializeToXmlFile("UDP-No-Mobility.xml", true, true);
     if (stats.empty())
     {
         NS_LOG_ERROR("Nenhum fluxo coletado.");

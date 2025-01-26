@@ -1,4 +1,3 @@
-// tcp
 #include "ns3/applications-module.h"
 #include "ns3/core-module.h"
 #include "ns3/flow-monitor-helper.h"
@@ -19,8 +18,8 @@ NS_LOG_COMPONENT_DEFINE("TcpNoMobilityScenario");
 int
 main(int argc, char* argv[])
 {
-    uint32_t nClients = 32; // Número inicial de clientes
-    double simulationTime = 11.0;
+    uint32_t nClients = 30; // Número inicial de clientes
+    double simulationTime = 20.0;
     CommandLine cmd;
     cmd.AddValue("nClients", "Número de clientes na rede sem fio", nClients);
     cmd.Parse(argc, argv);
@@ -112,22 +111,27 @@ main(int argc, char* argv[])
     // Configurar a aplicação TCP
     uint16_t port = 9;
 
+   for (u_int32_t i = 0; i < nClients; i++)
+    {
+        u_int16_t m_port = port + i;
+
     // Cria o servidor TCP
-    PacketSinkHelper tcpServer("ns3::TcpSocketFactory",
-                               InetSocketAddress(Ipv4Address::GetAny(), port));
-    ApplicationContainer serverApp = tcpServer.Install(serverNode.Get(0));
-    serverApp.Start(Seconds(1.0));
-    serverApp.Stop(Seconds(simulationTime));
+        PacketSinkHelper tcpServer("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), m_port));
+        ApplicationContainer serverApp = tcpServer.Install(serverNode.Get(0));
+        serverApp.Start(Seconds(1.0));
+        serverApp.Stop(Seconds(simulationTime));
 
     // Aplicação nos clientes
-    BulkSendHelper tcpClient("ns3::TcpSocketFactory",
-                             InetSocketAddress(p2pInterfaces.GetAddress(0), port));
-    tcpClient.SetAttribute("MaxBytes", UintegerValue(0));    // Enviar até não houver mais dados
-    tcpClient.SetAttribute("SendSize", UintegerValue(1024)); // Tamanho do pacote
-
-    ApplicationContainer clientApps = tcpClient.Install(wifiClients);
-    clientApps.Start(Seconds(2.0));
-    clientApps.Stop(Seconds(simulationTime));
+        OnOffHelper onoffHelper("ns3::TcpSocketFactory", InetSocketAddress(p2pInterfaces.GetAddress(0), m_port));
+        onoffHelper.SetAttribute("DataRate", StringValue("1Mbps"));  // Taxa de dados de 1 Mbps
+        onoffHelper.SetAttribute("PacketSize", UintegerValue(1024));  // Tamanho do pacote de 1024 bytes
+        onoffHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1.0]"));  // Tempo de atividade 1 segundo
+        onoffHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0.0]")); // Tempo de inatividade 0 segundos
+    
+        ApplicationContainer clientApps = onoffHelper.Install(wifiClients.Get(i));
+        clientApps.Start(Seconds(2.0));
+        clientApps.Stop(Seconds(simulationTime));
+    }
 
     // Habilitar o roteamento
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
@@ -141,7 +145,7 @@ main(int argc, char* argv[])
     phy.EnablePcap("tcp-no-mobility", apDevice.Get(0));
 
     // Rodar a simulação
-    Simulator::Stop(Seconds(11.0));
+    Simulator::Stop(Seconds(simulationTime));
     Simulator::Run();
 
     // Coletar métricas do FlowMonitor
@@ -149,6 +153,8 @@ main(int argc, char* argv[])
     Ptr<Ipv4FlowClassifier> classifier =
         DynamicCast<Ipv4FlowClassifier>(flowmonHelper.GetClassifier());
     std::map<FlowId, FlowMonitor::FlowStats> stats = flowMonitor->GetFlowStats();
+    flowMonitor->SerializeToXmlFile("TCP-No-Mobility.xml", true, true);
+   
     if (stats.empty())
     {
         NS_LOG_ERROR("Nenhum fluxo coletado.");
