@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./ns-3/build-support/pip-wheel"
+    ]
+}
