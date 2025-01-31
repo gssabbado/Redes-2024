@@ -69,31 +69,40 @@ main(int argc, char* argv[])
 
     // Configurar mobilidade
     MobilityHelper mobility;
+    MobilityHelper ApMobility;
+    MobilityHelper MobilityServer;
 
     // Clientes sem mobilidade
     mobility.SetPositionAllocator("ns3::GridPositionAllocator",
                                   "MinX",
-                                  DoubleValue(0.0),
+                                  DoubleValue(40.0),
                                   "MinY",
-                                  DoubleValue(0.0),
+                                  DoubleValue(40.0),
                                   "DeltaX",
                                   DoubleValue(5.0),
                                   "DeltaY",
-                                  DoubleValue(10.0),
+                                  DoubleValue(5.0),
                                   "GridWidth",
                                   UintegerValue(3),
                                   "LayoutType",
                                   StringValue("RowFirst"));
-    mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    mobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
     mobility.Install(wifiClients);
 
     // AP fixo
-    mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-    mobility.Install(apNode);
+    Ptr<ListPositionAllocator> positionAp = CreateObject<ListPositionAllocator>();
+    positionAp->Add(Vector(40, 40, 0));
+    ApMobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    ApMobility.SetPositionAllocator(positionAp);
+    ApMobility.Install(apNode);
 
     // Servidor fixo
+    Ptr<ListPositionAllocator> positionServer = CreateObject<ListPositionAllocator>();
+    positionServer->Add(Vector(0, 0, 0));
+    MobilityServer.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    MobilityServer.SetPositionAllocator(positionServer);
+    MobilityServer.Install(serverNode);
     mobility.Install(serverNode);
-
     // Instalar a pilha de Internet
     InternetStackHelper stack;
     stack.Install(serverNode);

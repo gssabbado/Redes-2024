@@ -66,11 +66,18 @@ int main(int argc, char* argv[])
     mac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid));
     NetDeviceContainer apDevice = wifi.Install(phy, mac, apNode);
 
-    // Configura a mobilidade para o AP (fixo)
+      // Configurar mobilidade
     MobilityHelper mobility;
+    MobilityHelper ApMobility;
+    MobilityHelper MobilityServer;
 
-    mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-    mobility.Install(apNode);
+
+    // AP fixo
+    Ptr<ListPositionAllocator> positionAp = CreateObject<ListPositionAllocator>();
+    positionAp->Add(Vector(40, 40, 0));
+    ApMobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    ApMobility.SetPositionAllocator(positionAp);
+    ApMobility.Install(apNode);
     
     // Define o modelo de mobilidade como ConstantVelocityMobilityModel
     mobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
@@ -88,8 +95,11 @@ int main(int argc, char* argv[])
     }
 
     // Servidor fixo
-    mobility.Install(serverNode);
-
+    Ptr<ListPositionAllocator> positionServer = CreateObject<ListPositionAllocator>();
+    positionServer->Add(Vector(0, 0, 0));
+    MobilityServer.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    MobilityServer.SetPositionAllocator(positionServer);
+    MobilityServer.Install(serverNode);
     // Instalar a pilha de Internet
     InternetStackHelper stack;
     stack.Install(serverNode);

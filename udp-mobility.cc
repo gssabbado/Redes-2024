@@ -8,6 +8,8 @@
 #include "ns3/wifi-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/log.h"
+#include "ns3/netanim-module.h"
+
 #include <iomanip>
 
 using namespace ns3;
@@ -62,11 +64,18 @@ int main(int argc, char* argv[])
     mac.SetType("ns3::StaWifiMac", "Ssid", SsidValue(ssid), "ActiveProbing", BooleanValue(false));
     NetDeviceContainer clientDevices = wifi.Install(phy, mac, wifiClients);
 
-    // Configura a mobilidade para o AP (fixo)
+    // Configurar mobilidade
     MobilityHelper mobility;
+    MobilityHelper ApMobility;
+    MobilityHelper MobilityServer;
 
-    mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-    mobility.Install(apNode);
+
+    // AP fixo
+    Ptr<ListPositionAllocator> positionAp = CreateObject<ListPositionAllocator>();
+    positionAp->Add(Vector(40, 40, 0));
+    ApMobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    ApMobility.SetPositionAllocator(positionAp);
+    ApMobility.Install(apNode);
     
     // Define o modelo de mobilidade como ConstantVelocityMobilityModel
     mobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
@@ -84,7 +93,11 @@ int main(int argc, char* argv[])
     }
 
     // Servidor fixo
-    mobility.Install(serverNode);
+    Ptr<ListPositionAllocator> positionServer = CreateObject<ListPositionAllocator>();
+    positionServer->Add(Vector(0, 0, 0));
+    MobilityServer.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    MobilityServer.SetPositionAllocator(positionServer);
+    MobilityServer.Install(serverNode);
 
     // Instala a pilha de Internet
     InternetStackHelper stack;
@@ -178,6 +191,24 @@ int main(int argc, char* argv[])
                   << "\t"                                          // Taxa em Mbps, alinhada
                   << std::setw(5) << averageDelayMs << "\t"        // Atraso médio em ms, alinhado
                   << std::setw(5) << packetLossPercentage << "\n"; // Perda de pacotes, alinhada
+    }
+
+    AnimationInterface anim("UdpMobilityAnim.xml");
+
+    anim.SetConstantPosition(serverNode.Get(0), 0, 0);
+    anim.SetConstantPosition(apNode.Get(0), 40, 40);
+
+    for (uint32_t i = 0; i < nClients; i++)
+    {
+        anim.SetConstantPosition(wifiClients.Get(i), 40 + (i % 3) * 5, 40 + (i / 3) * 5);
+    }
+
+    // Definir cores para diferenciar os tipos de nó
+    anim.UpdateNodeColor(serverNode.Get(0), 255, 0, 0); // Vermelho para o servidor
+    anim.UpdateNodeColor(apNode.Get(0), 0, 255, 0);     // Verde para o AP
+    for (uint32_t i = 0; i < nClients; i++)
+    {
+        anim.UpdateNodeColor(wifiClients.Get(i), 0, 0, 255); // Azul para clientes
     }
 
     // Finaliza a simulação

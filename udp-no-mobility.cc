@@ -3,36 +3,30 @@
 #include "ns3/flow-monitor-helper.h"
 #include "ns3/internet-module.h"
 #include "ns3/ipv4-flow-classifier.h"
+#include "ns3/log.h"
 #include "ns3/mobility-module.h"
+#include "ns3/netanim-module.h"
 #include "ns3/network-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/wifi-module.h"
+
 #include <iomanip>
 
 using namespace ns3;
 
-NS_LOG_COMPONENT_DEFINE("TcpUdpNoMobilityScenario");
+NS_LOG_COMPONENT_DEFINE("TcpNoMobilityScenario");
 
 int
 main(int argc, char* argv[])
 {
-
-    uint32_t nClients = 18; // Número inicial de clientes
+    uint32_t nClients = 32; // Número inicial de clientes
     double simulationTime = 20.0;
-
     CommandLine cmd;
     cmd.AddValue("nClients", "Número de clientes na rede sem fio", nClients);
     cmd.Parse(argc, argv);
 
-    // Verifica se o número de clientes é par
-    if (nClients % 2 != 0)
-    {
-        NS_LOG_ERROR("O número de clientes deve ser par para dividir 50% TCP e 50% UDP.");
-        return 1;
-    }
-
     // Configuração do log
-    LogComponentEnable("TcpUdpNoMobilityScenario", LOG_LEVEL_INFO);
+    LogComponentEnable("TcpNoMobilityScenario", LOG_LEVEL_INFO);
 
     // Configurar os nós
     NodeContainer serverNode;
@@ -50,7 +44,8 @@ main(int argc, char* argv[])
     pointToPoint.SetDeviceAttribute("DataRate", StringValue("100Mbps"));
     pointToPoint.SetChannelAttribute("Delay", StringValue("2ms"));
 
-    NetDeviceContainer p2pDevices = pointToPoint.Install(p2pNodes);
+    NetDeviceContainer p2pDevices;
+    p2pDevices = pointToPoint.Install(p2pNodes);
 
     // Configurar a rede Wi-Fi
     WifiHelper wifi;
@@ -71,30 +66,39 @@ main(int argc, char* argv[])
 
     // Configurar mobilidade
     MobilityHelper mobility;
+    MobilityHelper ApMobility;
+    MobilityHelper MobilityServer;
 
     // Clientes sem mobilidade
     mobility.SetPositionAllocator("ns3::GridPositionAllocator",
                                   "MinX",
-                                  DoubleValue(0.0),
+                                  DoubleValue(40.0),
                                   "MinY",
-                                  DoubleValue(0.0),
+                                  DoubleValue(40.0),
                                   "DeltaX",
                                   DoubleValue(5.0),
                                   "DeltaY",
-                                  DoubleValue(10.0),
+                                  DoubleValue(5.0),
                                   "GridWidth",
                                   UintegerValue(3),
                                   "LayoutType",
                                   StringValue("RowFirst"));
-    mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    mobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
     mobility.Install(wifiClients);
 
     // AP fixo
-    mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-    mobility.Install(apNode);
+    Ptr<ListPositionAllocator> positionAp = CreateObject<ListPositionAllocator>();
+    positionAp->Add(Vector(40, 40, 0));
+    ApMobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    ApMobility.SetPositionAllocator(positionAp);
+    ApMobility.Install(apNode);
 
     // Servidor fixo
-    mobility.Install(serverNode);
+    Ptr<ListPositionAllocator> positionServer = CreateObject<ListPositionAllocator>();
+    positionServer->Add(Vector(0, 0, 0));
+    MobilityServer.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    MobilityServer.SetPositionAllocator(positionServer);
+    MobilityServer.Install(serverNode);
 
     // Instalar a pilha de Internet
     InternetStackHelper stack;
@@ -114,59 +118,61 @@ main(int argc, char* argv[])
     Ipv4InterfaceContainer wifiInterfaces = address.Assign(clientDevices);
     address.Assign(apDevice);
 
-
-    // Configurar a aplicação UDP
+    // Configurar a aplicação TCP
     uint16_t port = 9;
 
     for (u_int32_t i = 0; i < nClients; i++)
     {
         u_int16_t m_port = port + i;
 
-        // Aplicação no servidor
-        PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", InetSocketAddress(p2pInterfaces.GetAddress(0), m_port));
-        ApplicationContainer serverApp = sinkHelper.Install(serverNode.Get(0));
+        // Cria o servidor TCP
+        PacketSinkHelper tcpServer("ns3::UdpSocketFactory",
+                                   InetSocketAddress(Ipv4Address::GetAny(), m_port));
+        ApplicationContainer serverApp = tcpServer.Install(serverNode.Get(0));
         serverApp.Start(Seconds(1.0));
         serverApp.Stop(Seconds(simulationTime));
 
         // Aplicação nos clientes
-        OnOffHelper onoffHelper("ns3::UdpSocketFactory", InetSocketAddress(p2pInterfaces.GetAddress(0), m_port));
-        onoffHelper.SetAttribute("DataRate", StringValue("1Mbps"));  // Taxa de dados de 1 Mbps
-        onoffHelper.SetAttribute("PacketSize", UintegerValue(1024));  // Tamanho do pacote de 1024 bytes
-        onoffHelper.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1.0]"));  // Tempo de atividade 1 segundo
-        onoffHelper.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0.0]")); // Tempo de inatividade 0 segundos
-
+        OnOffHelper onoffHelper("ns3::UdpSocketFactory",
+                                InetSocketAddress(p2pInterfaces.GetAddress(0), m_port));
+        onoffHelper.SetAttribute("DataRate", StringValue("1Mbps")); // Taxa de dados de 1 Mbps
+        onoffHelper.SetAttribute("PacketSize",
+                                 UintegerValue(1024)); // Tamanho do pacote de 1024 bytes
+        onoffHelper.SetAttribute(
+            "OnTime",
+            StringValue(
+                "ns3::ConstantRandomVariable[Constant=1.0]")); // Tempo de atividade 1 segundo
+        onoffHelper.SetAttribute(
+            "OffTime",
+            StringValue(
+                "ns3::ConstantRandomVariable[Constant=0.0]")); // Tempo de inatividade 0 segundos
 
         ApplicationContainer clientApps = onoffHelper.Install(wifiClients.Get(i));
         clientApps.Start(Seconds(2.0));
         clientApps.Stop(Seconds(simulationTime));
     }
 
-
-    // Instalar o aplicativo UDP nos clientes restantes
-    for (uint32_t i = halfClients; i < nClients; ++i)
-    {
-        udpClientApps.Add(udpClient.Install(wifiClients.Get(i)));
-    }
-
-    NS_LOG_INFO("Clientes UDP iniciados.");
-    udpClientApps.Start(Seconds(2.0));
-    udpClientApps.Stop(Seconds(simulationTime));
+    // Habilitar o roteamento
+    Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
     // Configurar o FlowMonitor
     FlowMonitorHelper flowmonHelper;
-    Ptr<FlowMonitor> monitor = flowmonHelper.InstallAll();
+    Ptr<FlowMonitor> flowMonitor = flowmonHelper.InstallAll();
 
-    // Iniciar a simulação
-    Simulator::Stop(Seconds(11.0));
-    NS_LOG_INFO("Iniciando a simulação...");
+    // Habilitar rastreamento
+    pointToPoint.EnablePcapAll("tcp-no-mobility");
+    phy.EnablePcap("tcp-no-mobility", apDevice.Get(0));
+
+    // Rodar a simulação
+    Simulator::Stop(Seconds(simulationTime));
     Simulator::Run();
-    NS_LOG_INFO("Simulação finalizada.");
 
     // Coletar métricas do FlowMonitor
     flowMonitor->CheckForLostPackets();
-    Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier>(flowmonHelper.GetClassifier());
+    Ptr<Ipv4FlowClassifier> classifier =
+        DynamicCast<Ipv4FlowClassifier>(flowmonHelper.GetClassifier());
     std::map<FlowId, FlowMonitor::FlowStats> stats = flowMonitor->GetFlowStats();
-    flowMonitor->SerializeToXmlFile("UDP-No-Mobility.xml", true, true);
+    flowMonitor->SerializeToXmlFile("TCP-No-Mobility.xml", true, true);
 
     if (stats.empty())
     {
@@ -176,9 +182,10 @@ main(int argc, char* argv[])
     {
         NS_LOG_INFO("Fluxos coletados: " << stats.size());
     }
+
     std::cout << std::fixed << std::setprecision(6);
 
-    std::cout << "\t\t\t|================= UDP/TCP sem Mobilidade =================|\n";
+    std::cout << "\t\t\t|================= UDP sem Mobilidade =================|\n";
     std::cout
         << "Fluxo ID\tOrigem\t\tDestino\t\tTaxa (Mbps)\tAtraso médio (ms)\tPerda de Pacotes (%)\n";
 
@@ -199,6 +206,26 @@ main(int argc, char* argv[])
                   << std::setw(5) << packetLossPercentage << "\n"; // Perda de pacotes, alinhada
     }
 
+    AnimationInterface anim("anim.xml");
+
+    anim.SetConstantPosition(serverNode.Get(0), 0, 0);
+    anim.SetConstantPosition(apNode.Get(0), 40, 40);
+
+    for (uint32_t i = 0; i < nClients; i++)
+    {
+        anim.SetConstantPosition(wifiClients.Get(i), 40 + (i % 3) * 5, 40 + (i / 3) * 5);
+    }
+
+    // Definir cores para diferenciar os tipos de nó
+    anim.UpdateNodeColor(serverNode.Get(0), 255, 0, 0); // Vermelho para o servidor
+    anim.UpdateNodeColor(apNode.Get(0), 0, 255, 0);     // Verde para o AP
+    for (uint32_t i = 0; i < nClients; i++)
+    {
+        anim.UpdateNodeColor(wifiClients.Get(i), 0, 0, 255); // Azul para clientes
+    }
+
+    // Finalizar a simulação
     Simulator::Destroy();
+
     return 0;
 }
