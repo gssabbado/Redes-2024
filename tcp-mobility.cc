@@ -7,6 +7,7 @@
 #include "ns3/network-module.h"
 #include "ns3/wifi-module.h"
 #include "ns3/point-to-point-module.h"
+#include "ns3/netanim-module.h"
 #include <iomanip>
 #include "ns3/log.h"
 
@@ -80,6 +81,19 @@ main(int argc, char* argv[])
     ApMobility.Install(apNode);
     
     // Define o modelo de mobilidade como ConstantVelocityMobilityModel
+    mobility.SetPositionAllocator("ns3::GridPositionAllocator",
+                                  "MinX",
+                                  DoubleValue(40.0),
+                                  "MinY",
+                                  DoubleValue(40.0),
+                                  "DeltaX",
+                                  DoubleValue(5.0),
+                                  "DeltaY",
+                                  DoubleValue(5.0),
+                                  "GridWidth",
+                                  UintegerValue(3),
+                                  "LayoutType",
+                                  StringValue("RowFirst"));
     mobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
     mobility.Install(wifiClients);
 
@@ -87,11 +101,8 @@ main(int argc, char* argv[])
     for (uint32_t i = 0; i < wifiClients.GetN(); ++i) {
         Ptr<ConstantVelocityMobilityModel> mobilityModel = wifiClients.Get(i)->GetObject<ConstantVelocityMobilityModel>();
 
-        // Define a posição inicial (opcional, pode ser aleatória)
-        mobilityModel->SetPosition(Vector(0.0, 0.0, 0.0)); // (x, y, z)
-
         // Define a velocidade e a direção do nó
-        mobilityModel->SetVelocity(Vector(5.0, 0.0, 0.0)); // Velocidade (m/s) em (x, y, z)
+        mobilityModel->SetVelocity(Vector(3.0, 0.0, 0.0)); // Velocidade (m/s) em (x, y, z)
     }
 
      // Servidor fixo
@@ -195,6 +206,25 @@ main(int argc, char* argv[])
                   << std::setw(5) << averageDelayMs << "\t"        // Atraso médio em ms, alinhado
                   << std::setw(5) << packetLossPercentage << "\n"; // Perda de pacotes, alinhada
     }
+
+    AnimationInterface anim("AnimTcpMobility.xml");
+
+    anim.SetConstantPosition(serverNode.Get(0), 0, 0);
+    anim.SetConstantPosition(apNode.Get(0), 40, 40);
+
+    for (uint32_t i = 0; i < nClients; i++)
+    {
+        anim.SetConstantPosition(wifiClients.Get(i), 40 + (i % 3) * 5, 40 + (i / 3) * 5);
+    }
+
+    // Definir cores para diferenciar os tipos de nó
+    anim.UpdateNodeColor(serverNode.Get(0), 255, 0, 0); // Vermelho para o servidor
+    anim.UpdateNodeColor(apNode.Get(0), 0, 255, 0);     // Verde para o AP
+    for (uint32_t i = 0; i < nClients; i++)
+    {
+        anim.UpdateNodeColor(wifiClients.Get(i), 0, 0, 255); // Azul para clientes
+    }
+
 
     // Finaliza a simulação
     Simulator::Destroy();

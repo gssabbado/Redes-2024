@@ -14,7 +14,7 @@
 
 using namespace ns3;
 
-NS_LOG_COMPONENT_DEFINE("TcpNoMobilityScenario");
+NS_LOG_COMPONENT_DEFINE("UdpNoMobilityScenario");
 
 int
 main(int argc, char* argv[])
@@ -26,7 +26,7 @@ main(int argc, char* argv[])
     cmd.Parse(argc, argv);
 
     // Configuração do log
-    LogComponentEnable("TcpNoMobilityScenario", LOG_LEVEL_INFO);
+    LogComponentEnable("UdpNoMobilityScenario", LOG_LEVEL_INFO);
 
     // Configurar os nós
     NodeContainer serverNode;
@@ -118,17 +118,17 @@ main(int argc, char* argv[])
     Ipv4InterfaceContainer wifiInterfaces = address.Assign(clientDevices);
     address.Assign(apDevice);
 
-    // Configurar a aplicação TCP
+    // Configurar a aplicação UDP
     uint16_t port = 9;
 
     for (u_int32_t i = 0; i < nClients; i++)
     {
         u_int16_t m_port = port + i;
 
-        // Cria o servidor TCP
-        PacketSinkHelper tcpServer("ns3::UdpSocketFactory",
+        // Cria o servidor UDP
+        PacketSinkHelper udpServer("ns3::UdpSocketFactory",
                                    InetSocketAddress(Ipv4Address::GetAny(), m_port));
-        ApplicationContainer serverApp = tcpServer.Install(serverNode.Get(0));
+        ApplicationContainer serverApp = udpServer.Install(serverNode.Get(0));
         serverApp.Start(Seconds(1.0));
         serverApp.Stop(Seconds(simulationTime));
 
@@ -160,8 +160,8 @@ main(int argc, char* argv[])
     Ptr<FlowMonitor> flowMonitor = flowmonHelper.InstallAll();
 
     // Habilitar rastreamento
-    pointToPoint.EnablePcapAll("tcp-no-mobility");
-    phy.EnablePcap("tcp-no-mobility", apDevice.Get(0));
+    pointToPoint.EnablePcapAll("udp-no-mobility");
+    phy.EnablePcap("udp-no-mobility", apDevice.Get(0));
 
     // Rodar a simulação
     Simulator::Stop(Seconds(simulationTime));
@@ -172,7 +172,7 @@ main(int argc, char* argv[])
     Ptr<Ipv4FlowClassifier> classifier =
         DynamicCast<Ipv4FlowClassifier>(flowmonHelper.GetClassifier());
     std::map<FlowId, FlowMonitor::FlowStats> stats = flowMonitor->GetFlowStats();
-    flowMonitor->SerializeToXmlFile("TCP-No-Mobility.xml", true, true);
+    flowMonitor->SerializeToXmlFile("UDP-No-Mobility.xml", true, true);
 
     if (stats.empty())
     {
@@ -206,7 +206,7 @@ main(int argc, char* argv[])
                   << std::setw(5) << packetLossPercentage << "\n"; // Perda de pacotes, alinhada
     }
 
-    AnimationInterface anim("anim.xml");
+    AnimationInterface anim("AnimUdpNoMobility.xml");
 
     anim.SetConstantPosition(serverNode.Get(0), 0, 0);
     anim.SetConstantPosition(apNode.Get(0), 40, 40);

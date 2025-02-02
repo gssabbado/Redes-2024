@@ -8,6 +8,7 @@
 #include "ns3/network-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/wifi-module.h"
+#include "ns3/netanim-module.h"
 
 #include <iomanip>
 
@@ -63,7 +64,6 @@ main(int argc, char* argv[])
     mac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid));
     NetDeviceContainer apDevice = wifi.Install(phy, mac, apNode);
 
-
     // Configurar mobilidade
     MobilityHelper mobility;
     MobilityHelper ApMobility;
@@ -99,7 +99,6 @@ main(int argc, char* argv[])
     MobilityServer.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     MobilityServer.SetPositionAllocator(positionServer);
     MobilityServer.Install(serverNode);
-    mobility.Install(serverNode);
 
     // Instalar a pilha de Internet
     InternetStackHelper stack;
@@ -196,6 +195,24 @@ main(int argc, char* argv[])
                   << "\t"                                          // Taxa em Mbps, alinhada
                   << std::setw(5) << averageDelayMs << "\t"        // Atraso médio em ms, alinhado
                   << std::setw(5) << packetLossPercentage << "\n"; // Perda de pacotes, alinhada
+    }
+
+    AnimationInterface anim("AnimTcpNoMobility.xml");
+
+    anim.SetConstantPosition(serverNode.Get(0), 0, 0);
+    anim.SetConstantPosition(apNode.Get(0), 40, 40);
+
+    for (uint32_t i = 0; i < nClients; i++)
+    {
+        anim.SetConstantPosition(wifiClients.Get(i), 40 + (i % 3) * 5, 40 + (i / 3) * 5);
+    }
+
+    // Definir cores para diferenciar os tipos de nó
+    anim.UpdateNodeColor(serverNode.Get(0), 255, 0, 0); // Vermelho para o servidor
+    anim.UpdateNodeColor(apNode.Get(0), 0, 255, 0);     // Verde para o AP
+    for (uint32_t i = 0; i < nClients; i++)
+    {
+        anim.UpdateNodeColor(wifiClients.Get(i), 0, 0, 255); // Azul para clientes
     }
 
     // Finalizar a simulação
